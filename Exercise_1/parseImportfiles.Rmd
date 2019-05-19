@@ -29,7 +29,6 @@ We have two files:
     Targets' information, saved as _targets\_info_ 
 
 ```{r}
-setwd("~/Documents/Omics/Practices/PracticesM2/OmicsModule2_practice1")
 expres2 <- read.delim("expres2.txt", row.names=1)
 targets_info <- read.table("targets.txt", header = T)
 View(expres2)
@@ -65,12 +64,12 @@ boxplot(expres2)
 # 
 
 
-hist(expres[,1], main = "First column")
+hist(expres2[,1], main = "First column")
 
 
-row_means_apply <- apply(expres,1, mean)
+row_means_apply <- apply(expres2,1, mean)
 
-row_means_dataframe <- rowMeans(expres)
+row_means_dataframe <- rowMeans(expres2)
 
 View(row_means_dataframe)
 plot(row_means_dataframe)

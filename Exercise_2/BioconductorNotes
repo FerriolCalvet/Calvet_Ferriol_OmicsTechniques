@@ -1,0 +1,33 @@
+Bioconductor has a phylosophy of sharing.
+
+Open source software for bioinformatics
+Now it has over 3000 projects.
+
+Provide access to powerful and new statistical and graphical methods for omics data.
+
+There are 4 different types of packages:
+    Software
+    AnnotationData
+            for example information about the platform used for the experiment
+    ExperimentData
+    Workflow
+            Series of steps related to an analysis or process
+
+
+Main advantage of OOP, is that we can encapsulate objects like data structures and functions. Data structures would be the classes, and the functions would be the methods.
+
+This allows us to work in a more classified way, and conceptually easier.
+
+An instance of a class is a variable of the type of that class.
+    methods are able to adapt to the class type that is calling them.
+
+
+Class ExpressionSet, intended to store all the information of a microarray experiment.
+With the knowledge of this class we will already be familiar with lots of things in Bioconductor.
+
+ExpressionSet class:
+    Used for microarrays, RNAseq, proteomics, metabolomics
+
+    MIAME (Minimum information about a microarray experiment)
+    Annotation: any particular annotation
+

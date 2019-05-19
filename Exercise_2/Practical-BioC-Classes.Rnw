@@ -1,0 +1,152 @@
+\documentclass[a4paper]{article}
+
+\usepackage{hyperref}
+\usepackage{graphicx}
+\usepackage{underscore}
+
+\newcommand{\Rfunction}[1]{{\texttt{#1}}}
+\newcommand{\Rmethod}[1]{{\texttt{#1}}}
+\newcommand{\R}{\textbf{\emph{R\,}}}
+
+\newcommand{\Robject}[1]{{\texttt{#1}}}
+\newcommand{\Rpackage}[1]{{\textit{#1}}}
+\newcommand{\Rclass}[1]{{\textit{#1}}}
+
+
+\newcommand{\classdef}[1]{%
+  {\em #1}
+}
+
+\pagestyle{plain}
+
+\title{Introduction to Bioconductor class \texttt{ExpressionSet}}
+\author{Alex Sanchez}
+\date()
+
+<<include=FALSE>>=
+require(knitr)
+opts_chunk$set(
+concordance=FALSE, echo=TRUE, cache=TRUE, warning=FALSE, error=FALSE, message=FALSE)
+@
+
+\begin{document}
+
+\maketitle
+
+\thispagestyle{empty}
+
+\tableofcontents
+
+
+\section{Bioconductor Classes}
+
+Object-oriented design provides a convenient way to represent data and actions
+that can be performed on them. A \emph{class} can be tought of as a template, a description of what constitutes each instance of the class. 
+An \emph{instance} of a class is a realization of what describes the class.
+Attributes of a class are data components, and methods of a class are functions,
+or actions the instance/class is capable of.
+
+
+The {\it R} language has an implementation of object concepts through the package
+\Rpackage{methods}.
+
+The package \Rpackage{Biobase} contains basic strucutures for microarray data.
+<<loadBiobase>>=
+library(Biobase)
+@
+
+\subsection{class \texttt{AnnotatedDataFrame}}
+
+Class \Rclass{AnnotatedDataFrame} is intended to contain covariate information, {\it i.e.} information relative the hybridization experiments. This is particularily convenient for exploratory analysis, as important covariate are not known.
+
+<<AnnotatedDataFramephenoData.1>>= 
+samplenames <- letters[1:10]
+dataf <- data.frame(treated=sample(c(TRUE, FALSE), 10, replace=TRUE),
+                    sex=sample(c("Male", "Female"), 10, replace=TRUE),
+                    mood=sample(c("Happy", "Dont't care", "Grumpy"), 10, replace=TRUE),
+                    names=samplenames, row.names="names")
+dataDesc = data.frame(c("Treated with dark chocolate", "Sex", "Mood while eating"))
+
+pdata <- new("AnnotatedDataFrame", data=dataf,dataDesc)
+@ 
+
+\subsubsection{Exercise}
+
+Select a dataset that you understand. Be sure to have information on the covariates in a data frame (e.g. the "targets.txt" created to sotore the groups) 
+Create an \texttt{AnnotatedDataFrame}
+
+
+\subsection{class MIAME}
+
+Class MIAME was created to adapt Bioconductor data structures to the 
+``Minimum Information About a Microarray Experiment'' standard.
+In practice people tend to skip its use.
+
+<<label=MIAME>>=
+my.desc <- new("MIAME", name="LPS_Experiment",
+            lab="National Cancer Institute",
+            contact="Lakshman Chelvaraja",
+            title="Molecular basis of age associated cytokine dysregulation in LPS stimulated macrophages ",
+            url="http://www.jleukbio.org/cgi/content/abstract/79/6/1314")
+print(my.desc)
+@
+
+
+\subsection{class \texttt{ExpressionSet}}
+
+This class is intended to be a container for high-throughput assays and experimental metadata. 
+
+\texttt{ExpressionSet} class is derived from the abstract \texttt{eSet}, and requires a matrix named \texttt{exprs} as assayData member.
+
+Typically, we will use instances of this class to store the results of high throughput experiments. 
+
+The only compulsory parameter is the matrix \texttt{exprs} but we usually complement it with information and covariates and, perhaps on the experiment or the annotations.
+
+\begin{description}
+ \item[exprs] a \Rclass{matrix} of expression values (one gene per row, 
+one hybridization experiment per column).
+\item[phenoData] an instance of class \Rclass{AnnotatedDataFrame}
+\item[description] an instance of class \Rclass{MIAME}
+\item[annotation] an character vector containing the platform name.
+\end{description}
+ 
+<<>>=
+data(sample.ExpressionSet)
+sample.ExpressionSet
+@
+
+Slots can be accessed using \it{accessor} methods such as \texttt{exprs} to access the expression matrix (generically called \texttt{assayData}) or \texttt{pData} used to access the \texttt{phenoData} object
+
+
+\subsubsection{Exercises}
+\begin{enumerate}
+\item Use a GEO dataset for which you have prepared the expression matrix, the targets file and some additional information and create an ExpressionSet object from scratch to contain all the information.
+\item Practice extracting information or modifying the expression set.
+\end{enumerate}
+
+\section{The \texttt{GEOquery} package}
+
+\subsection{Overview of GEO}
+
+The NCBI Gene Expression Omnibus (GEO) serves as a public repository for a wide range of high-throughput experimental data. These data include single and dual channel microarray-based experiments measuring mRNA, genomic DNA, and protein abundance, as well as non-array techniques such as serial analysis of gene expression (SAGE), mass spectrometry proteomic data, and high-throughput sequencing data.
+
+At the most basic level of organization of GEO, there are four basic entity types. The first three (Sample, Platform, and Series) are supplied by users; the fourth, the dataset, is compiled and curated by GEO staff from the user-submitted data. See the GEO home page for more information.
+
+\subsection{Getting data from GEO}
+
+Getting data from GEO is really quite easy. There is only one command that is needed, getGEO. 
+
+This one function interprets its input to determine how to get the data from GEO and then parse the data into useful R data structures. Usage is quite simple. 
+
+<<>>=
+library(GEOquery)
+# gds <- getGEO("GDS507")
+gsm <- getGEO(filename=system.file("extdata/GSM11805.txt.gz",package="GEOquery"))
+@
+
+
+
+
+
+
+\end{document}
