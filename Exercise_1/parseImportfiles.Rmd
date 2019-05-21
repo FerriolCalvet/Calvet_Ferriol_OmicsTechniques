@@ -31,49 +31,47 @@ We have two files:
 ```{r}
 expres2 <- read.delim("expres2.txt", row.names=1)
 targets_info <- read.table("targets.txt", header = T)
-View(expres2)
-View(targets_info)
+# View(expres2)
+show(targets_info)
 ```
 
-The expression matrix contains the different 24 samples in the columns. These 24 samples can be grouped into 4 different groups, with 6 replicates per each group.
+The expression matrix contains the different 24 samples in the columns. These samples can be grouped into 4 different groups, with 6 replicates per each group. Note that in the output of the previous chunk you can see these different groups and replicates.
 Then for each of the samples we can find 35557 observations, this means that we have information for the expression of 35557 different transcripts.
-
-```{r}
-
-# 
-```
 
 
 ### Change sample names to informative names
+This is optional, we can keep working with the original names
 ```{r}
-new_names <- paste(targets_info$muscle, targets_info$genotype, targets_info$replicate)
+# new_names <- paste(targets_info$muscle, targets_info$genotype, targets_info$replicate)
 
-colnames(expres2) <- new_names
-colnames(expres2)
+# colnames(expres2) <- new_names
+# colnames(expres2)
 
-show(expres2)
+# head(expres2)
 ```
 
+## Analysis: Observation and summary
+
+When we make the first boxplot, we can see that the data is very dispersed so that the boxes cannot be appreciated, then if we apply the logarithmic transformation we can see it properly. So from now on we will use the data with the logarithm transformation applied.
+
 ```{r}
-# summarize the dataframe column wise
-summary(expres2)
+expres2 <- read.delim("expres2.txt", row.names=1) # this line is to make sure that only one logarithmic transformation is applied
 
 boxplot(expres2)
-# Half of the values are between 2 and 6, inside the box
-# We can see that most samples are very similar
-# 
 
+# we apply log transformation because it is a possible way to correct the data
+boxplot(log(expres2))
 
-hist(expres2[,1], main = "First column")
+expres2 <- log(expres2)
+```
+Comparing the two boxplots, we can see that after the transformation the information of the different groups can be compared easily and with more balanced values.
 
+##### Now start with the real analysis
+After applying the logarithm transformation, we can follow the analysis
+```{r}
+hist(expres2[,1])
 
 row_means_apply <- apply(expres2,1, mean)
-
-row_means_dataframe <- rowMeans(expres2)
-
-View(row_means_dataframe)
-plot(row_means_dataframe)
-
 hist(row_means_apply)
 ```
 
