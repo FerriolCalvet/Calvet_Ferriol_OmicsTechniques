@@ -1,1 +1,8 @@
+<<<<<<< HEAD
 https://github.com/FerriolCalvet/Calvet_Ferriol-OmicsTechniques.git
+=======
+This file contains the link for the GitHub repository.
+https://github.com/FerriolCalvet/Calvet_Ferriol-OmicsTechniques.git
+
+Then in this repository, we can find the report of this exercise in Exercise_1/CalvetFerriol_Exercise1.html
+>>>>>>> b04e874c187249fd81bd4746e7c278c73b36daa9
