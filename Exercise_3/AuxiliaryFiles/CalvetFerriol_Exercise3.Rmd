@@ -1,0 +1,242 @@
+---
+title: "CalvetFerriol_Exercise2"
+author: "Ferriol Calvet"
+date: "May 24, 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+```{r include=FALSE}
+#-------------------------------------------------------------------------
+###THIS IS AN EXAMPLE CODE FOR THE ANALYSIS OF AFFYMETRIX GENE MICROARRAYS
+#-------------------------------------------------------------------------
+
+#-------------------------------------------------------------------------
+###FOLDER DESTINATION DEFINITIONS
+#-------------------------------------------------------------------------
+workingDir <-getwd()
+dataDir <- file.path(workingDir, "data")
+resultsDir <- file.path(workingDir, "results")
+setwd(resultsDir)
+
+
+#-------------------------------------------------------------------------
+###INSTALLATION OF PACKAGES NEEDED
+#-------------------------------------------------------------------------
+if (!require(BiocManager)) install.packages("BiocManager")
+
+installifnot <- function (pkg){
+  if (!require(pkg, character.only=T)){
+    BiocManager::install(pkg)
+}else{
+  require(pkg, character.only=T)
+  }
+}
+
+installifnot("pd.mogene.1.0.st.v1")
+installifnot("mogene10sttranscriptcluster.db")
+installifnot("mogene10stprobeset.db")
+installifnot("oligo")
+installifnot("limma")
+installifnot("Biobase")
+installifnot("genefilter")
+installifnot("multtest")
+installifnot("annotate")
+installifnot("xtable")
+installifnot("gplots")
+installifnot("scatterplot3d")
+installifnot("arrayQualityMetrics")
+installifnot("pvca")
+
+# installifnot("ReactomePA")
+# installifnot("org.Mm.eg.db")
+# installifnot("mogene21sttranscriptcluster.db")
+# installifnot("pd.mogene.2.1.st")
+
+
+#-------------------------------------------------------------------------
+###LOAD DATA: TARGETS AND CEL FILES. 
+#-------------------------------------------------------------------------
+
+#TARGETS
+targets <-read.csv(file=file.path(dataDir,"targets.csv"), header = TRUE, sep="\t") 
+targets
+
+#CELFILES
+rawData <- read.celfiles(file.path(dataDir,CELfiles))
+
+
+celFiles <- list.celfiles("./data", full.names = TRUE)
+my.targets <-read.AnnotatedDataFrame(file.path("./data","targets.csv"), 
+                                     header = TRUE, row.names = 1, 
+                                     sep="\t")
+rawData <- read.celfiles(celFiles, phenoData = my.targets)
+
+## ----ChangeName----------------------------------------------------------
+colnames(rawData) <-rownames(pData(rawData)) <- my.targets@data$ShortName
+
+
+
+
+#DEFINE SOME VARIABLES FOR PLOTS
+sampleNames <- as.character(targets$SampleName)
+sampleColor <- as.character(targets$Color)
+```
+
+
+```{r eval=FALSE, include=FALSE}
+#---------------------------------------------------------------------------------------------
+###QUALITY CONTROL OF ARRAYS: RAW DATA
+#-------------------------------------------------------------------------------------------
+
+
+
+#BOXPLOT
+boxplot(rawData, which="all",las=2, main="Intensity distribution of RAW data", 
+        cex.axis=0.6, col=sampleColor, names=sampleNames)
+
+#HIERARQUICAL CLUSTERING
+clust.euclid.average <- hclust(dist(t(exprs(rawData))),method="average")
+plot(clust.euclid.average, labels=sampleNames, main="Hierarchical clustering of RawData", 
+     cex=0.7,  hang=-1)
+
+#PRINCIPAL COMPONENT ANALYSIS
+plotPCA <- function ( X, labels=NULL, colors=NULL, dataDesc="", scale=FALSE, formapunts=NULL, myCex=0.8,...)
+{
+  pcX<-prcomp(t(X), scale=scale) # o prcomp(t(X))
+  loads<- round(pcX$sdev^2/sum(pcX$sdev^2)*100,1)
+  xlab<-c(paste("PC1",loads[1],"%"))
+  ylab<-c(paste("PC2",loads[2],"%"))
+  if (is.null(colors)) colors=1
+  plot(pcX$x[,1:2],xlab=xlab,ylab=ylab, col=colors, pch=formapunts, 
+       xlim=c(min(pcX$x[,1])-100000, max(pcX$x[,1])+100000),ylim=c(min(pcX$x[,2])-100000, max(pcX$x[,2])+100000))
+  text(pcX$x[,1],pcX$x[,2], labels, pos=3, cex=myCex)
+  title(paste("Plot of first 2 PCs for expressions in", dataDesc, sep=" "), cex=0.8)
+}
+
+plotPCA(exprs(rawData), labels=sampleNames, dataDesc="raw data", colors=sampleColor,
+        formapunts=c(rep(16,4),rep(17,4)), myCex=0.6)
+
+#SAVE TO A FILE
+pdf(file.path(resultsDir, "QCPlots_Raw.pdf"))
+boxplot(rawData, which="all",las=2, main="Intensity distribution of RAW data", 
+        cex.axis=0.6, col=sampleColor, names=sampleNames)
+plot(clust.euclid.average, labels=sampleNames, main="Hierarchical clustering of samples of RawData", 
+     cex=0.7,  hang=-1)
+plotPCA(exprs(rawData), labels=sampleNames, dataDesc="raw data", colors=sampleColor,
+        formapunts=c(rep(16,4),rep(17,4)), myCex=0.6)
+dev.off()
+
+
+#---------------------------------------------------------------------------------------------
+###DATA NORMALIZATION
+#---------------------------------------------------------------------------------------------
+eset<-rma(rawData)
+
+write.exprs(eset, file.path(resultsDir, "NormData.txt"))
+
+```
+
+## Summary
+The following description was given: *Nebulin is a giant filamentous protein that is coextensive with the actin filaments of the skeletal muscle sarcomere. Nebulin mutations are the main cause of nemaline myopathy (NEM), with typical NEM adult patients having low expression of nebulin, yet the roles of nebulin in adult muscle remain poorly understood. To establish nebulin’s functional roles in adult muscle we performed studies on a novel conditional nebulin KO (Neb cKO) mouse model in which nebulin deletion was driven by the muscle creatine kinase (MCK) promotor. Neb cKO mice are born with high nebulin levels in their skeletal muscle but within weeks after birth nebulin expression rapidly falls to barely detectable levels Surprisingly, a large fraction of the mice survives to adulthood with low nebulin levels (<5% of control), contain nemaline rods, and undergo fiber-type switching towards oxidative types. These microarrays investigate the changes in gene expression when nebulin is deficient.*
+
+## Experimental design
+Two skeletal muscle groups were studied: Quadriceps (which is markedly smaller in the Neb cKO mice relative to control) and Soleus (which is not significantly smaller in the Neb cKO relative to control). Six biological replicates for each muscle group were selected; all are age-matched males.
+
+## Citation(s)
+This data was published in: 
+*Li F, Buck D, De Winter J, Kolb J et al. Nebulin deficiency in adult muscle causes sarcomere defects and muscle-type-dependent changes in trophicity: novel insights in nemaline myopathy. Hum Mol Genet 2015 Sep 15;24(18):5219-33. PMID: 26123491*
+
+The expression matrix contains the different 24 samples in the columns. These samples can be grouped into 4 different groups, with 6 replicates per each group. Note that in the output of the previous chunk you can see these different groups and replicates.
+Then for each of the samples we can find 35557 observations, this means that we have information for the expression of 35557 different transcripts.
+
+## Building the design and contrast matrices
+```{r}
+design<-matrix(
+  c(1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+    0,0,0,0,0,0,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,
+    0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,1,0,0,0,0,0,0,
+    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,1),
+  nrow=24,byrow=F)
+targets$Group <- paste(targets$Muscle, targets$Treatment, sep = "_")
+design2 <-model.matrix(~ 0+targets$Group)
+
+colnames(design) <- colnames(design2) <- unique(targets$Group)
+rownames(design) <- rownames(design2) <- targets$SampleName 
+print(design); print(design2)
+```
+```{r}
+cont.matrix <- makeContrasts (
+  quadControlvsquadKO = quad_cKO-quad_control,
+  soleusControlvssoleusKO = soleus_cKO-soleus_control,
+  quadControlvssoleusControl = soleus_control-quad_control,
+  levels=design)
+print(cont.matrix)
+```
+
+```{r fitModel}
+require(limma)
+fit<-lmFit(rawData, design)
+fit.main<-contrasts.fit(fit, cont.matrix)
+fit.main<-eBayes(fit.main)
+```
+
+```{r extractResults}
+topTab_quadControlvsquadKO <- topTable (fit.main, number=nrow(fit.main), coef="quadControlvsquadKO", adjust="fdr"); head(topTab_quadControlvsquadKO)
+
+topTab_soleusControlvssoleusKO <- topTable (fit.main, number=nrow(fit.main), coef="soleusControlvssoleusKO", adjust="fdr"); head(topTab_soleusControlvssoleusKO)
+
+topTab_quadControlvssoleusControl  <- topTable (fit.main, number=nrow(fit.main) , coef="quadControlvssoleusControl", adjust="fdr"); head(topTab_quadControlvssoleusControl)
+```
+
+```{r showResults}
+volcanoplot(fit.main, coef="quadControlvsquadKO", highlight=10)
+volcanoplot(fit.main, coef="soleusControlvssoleusKO", highlight=10)
+volcanoplot(fit.main, coef="quadControlvssoleusControl", highlight=10)
+
+?volcanoplot
+
+
+
+```
+
+Use annotation package to transform the identifiers into the real gene names.
+```{r}
+
+# select(.db, key = index, columns = columns )
+# index <- values from the index field of the database (names from the genes we want to see)
+
+BiocManager::install("mogene10stprobeset.db")
+require(mogene10stprobeset.db)
+anotAvsB <- select()
+```
+
+
+```{r}
+columns(mogene10stprobeset.db)
+
+probes_quadControlvsquadKO <- rownames(topTab_quadControlvsquadKO)[1:10]
+antot_quadControlvsquadKO <- select(mogene10stprobeset.db, probes_quadControlvsquadKO,
+                                    columns = c("ENTREZID","SYMBOL","GENENAME"))
+
+select(mogene10stprobeset.db, columns = c("ENTREZID","SYMBOL","GENENAME"))
+View(keys(mogene10stprobeset.db))
+
+modified <- c()
+for (i in 1:length(probes_quadControlvsquadKO)){
+  modified[i] <- as.character(as.numeric(probes_quadControlvsquadKO[i]) + 10338000)
+}
+
+
+modified
+antot_quadControlvsquadKO <- select(mogene10stprobeset.db, modified[2],
+                                    columns = c("ENTREZID","SYMBOL","GENENAME"))
+
+
+```
+
