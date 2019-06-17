@@ -1,0 +1,491 @@
+---
+title: "Report for the Microarray data analysis"
+author: "Ferriol Calvet"
+date: "June 17, 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r message=FALSE, warning=FALSE, include=FALSE}
+
+#' 
+## ----message=FALSE, warning=FALSE----------------------------------------
+## ----loadPackages, message=FALSE, warning=FALSE, eval=FALSE-----------
+require("colorspace")
+require("gplots")
+require("ggplot2")
+require("ggrepel")
+
+require("BiocManager")
+require("ReactomePA")
+require("org.Mm.eg.db")
+require("annotate")
+require("mogene10sttranscriptcluster.db")
+require("pvca")
+require("genefilter")
+require("limma")
+require("arrayQualityMetrics")
+require("oligo")
+
+targets <- read.csv2("./data/targets.csv", header = TRUE, sep = "\t") 
+print(targets)
+
+require(oligo)
+celFiles <- list.celfiles("./data", full.names = TRUE)
+my.targets <-read.AnnotatedDataFrame(file.path("./data","targets.csv"), 
+                                     header = TRUE, row.names = 1, 
+                                     sep="\t")
+rawData <- read.celfiles(celFiles, phenoData = my.targets)
+
+
+## ----ChangeName----------------------------------------------------------
+colnames(rawData) <-rownames(pData(rawData)) <- my.targets@data$ShortName
+
+## ----Normalization---------------------------------------------
+eset_rma <- rma(rawData)
+
+pData(eset_rma) <- targets
+
+## ----Filtering1, results='hide', message=FALSE---------------------------
+require(genefilter)
+require(mogene10sttranscriptcluster.db)
+annotation(eset_rma) <- "mogene10sttranscriptcluster.db"
+
+filtered <- nsFilter(eset_rma, 
+                     require.entrez = TRUE, remove.dupEntrez = TRUE,
+                     var.filter=TRUE, var.func=IQR, var.cutoff=0.75, 
+                     filterByQuantile=TRUE, feature.exclude = "^AFFX")
+
+## ----FilterResults2------------------------------------------------------
+print(filtered$filter.log)
+eset_filtered <-filtered$eset
+
+## ----SaveData1, results='hide', message=FALSE----------------------------
+write.csv(exprs(eset_rma), file="./results/normalized.Data.csv")
+write.csv(exprs(eset_filtered), file="./results/normalized.Filtered.Data.csv")
+save(eset_rma, eset_filtered, file="./results/normalized.Data.Rda")
+
+## ----LoadSavedData-------------------------------------------------------
+if (!exists("eset_filtered")) load (file="./results/normalized.Data.Rda")
+
+#' 
+#' # Build Design and Contrast matrices
+#' After having the data prepared, we now build the design and contrast matrices. The first one helps us to discriminate the 4 different groups in the experiment, and the second one allows us to define the comparisons that are rellevant for the analysis.  
+#' In our case the rellevant comparisons are KO vs control in quadriceps and in soleus, and also soleus control vs quadriceps control.
+## ------------------------------------------------------------------------
+## ----DesignMatrix, message=FALSE-----------------------------------------
+require(limma)
+designMat<- model.matrix(~0+Group, pData(eset_filtered))
+colnames(designMat) <- c("quad_ctrl","quad_KO","sol_ctrl","sol_KO")
+print(designMat)
+
+## ----. setContrasts------------------------------------------------------
+cont.matrix <- makeContrasts (
+  quadctrlvsquadKO = quad_KO-quad_ctrl,
+  solctrlvssolKO = sol_KO-sol_ctrl,
+  quadctrlvssolCtrl = sol_ctrl-quad_ctrl,
+  levels=designMat)
+print(cont.matrix)
+
+
+#' 
+#' # Fit a linear model and select significant hits
+#' With the design and the contrast matrices defined we can go on with the analysis, and fit the linear model. By fitting this linear model, we estimate the parameters that define the relationship between the values of expression and the different groups defined in the design matrix.  
+#' Once we have completed this step, we build the comparisons and we store in three different tables the results fro the three different comparison we defined in the contrast matrix.
+## ------------------------------------------------------------------------
+## ---- linearmodelfit-----------------------------------------------------
+require(limma)
+fit<-lmFit(eset_filtered, designMat)
+fit.main<-contrasts.fit(fit, cont.matrix)
+fit.main<-eBayes(fit.main)
+class(fit.main)
+
+## ---- topTabs1-----------------------------------------------------------
+topTab_quadctrlvsquadKO <- topTable (fit.main, number=nrow(fit.main), coef="quadctrlvsquadKO", adjust="fdr")
+
+## ---- topTabs2-----------------------------------------------------------
+topTab_solctrlvssolKO <- topTable (fit.main, number=nrow(fit.main), coef="solctrlvssolKO", adjust="fdr")
+
+## ---- topTabs3-----------------------------------------------------------
+topTab_quadctrlvssolCtrl  <- topTable (fit.main, number=nrow(fit.main) , coef="quadctrlvssolCtrl", adjust="fdr")
+
+
+#' 
+#' 
+#' # Annotate the top hits of each comparison
+#' This three tables we have just defined with the results of the linear model, can be annotated using the proper reference for our array, remember that, in this case, the annotation package that allows us to annotate our data is _"mogene10sttranscriptcluster.db"_.
+## ----warning=FALSE-------------------------------------------------------
+## ----GeneAnnotation, message=FALSE, warning=FALSE------------------------
+annotatedTopTable <- function(topTab, anotPackage)
+{
+  topTab <- cbind(PROBEID=rownames(topTab), topTab)
+  myProbes <- rownames(topTab)
+  thePackage <- eval(parse(text = anotPackage))
+  geneAnots <- select(thePackage, myProbes, c("SYMBOL", "ENTREZID", "GENENAME"))
+  annotatedTopTab<- merge(x=geneAnots, y=topTab, by.x="PROBEID", by.y="PROBEID")
+return(annotatedTopTab)
+}
+
+## ----annotateTopTables---------------------------------------------------
+topAnnotated_quadctrlvsquadKO <- annotatedTopTable(topTab_quadctrlvsquadKO,
+                                                   anotPackage="mogene10sttranscriptcluster.db")
+topAnnotated_solctrlvssolKO <- annotatedTopTable(topTab_solctrlvssolKO,
+                                                 anotPackage="mogene10sttranscriptcluster.db")
+topAnnotated_quadctrlvssolCtrl <- annotatedTopTable(topTab_quadctrlvssolCtrl,
+                                                    anotPackage="mogene10sttranscriptcluster.db")
+
+write.csv(topAnnotated_quadctrlvsquadKO, file="./results/topAnnotated_quadctrlvsquadKO.csv")
+write.csv(topAnnotated_solctrlvssolKO, file="./results/topAnnotated_solctrlvssolKO.csv")
+write.csv(topAnnotated_quadctrlvssolCtrl, file="./results/topAnnotated_quadctrlvssolCtrl.csv")
+
+#' 
+#' # Volcano plot of all the significant genes displaying the names for top 10 genes
+#' After annotating the genes that are cantidates to be differentially expressed in each of the comparisons, we can use volcano plots to show how significant and how differentially expressed they are.
+## ------------------------------------------------------------------------
+## ----volcanoPlot, fig.cap="Volcano plot for the comparison between KO and WT in COLD temperature. The names of the top 10 genes (i.e. the first ten genes in the topTable) are shown in the plot"----
+require(mogene10sttranscriptcluster.db)
+geneSymbols <- select(mogene10sttranscriptcluster.db, rownames(fit.main), c("SYMBOL"))
+SYMBOLS<- geneSymbols$SYMBOL
+for (i in colnames(cont.matrix)){
+  volcanoplot(fit.main, coef=i, highlight=10, names=SYMBOLS,
+              main=paste("Differentially expressed genes",i, sep="\n"))
+  abline(v=c(-1,1), col="red")
+}
+
+#' # Significant genes comparison
+#' We can also check the intersections of the different sets of differentially expressed genes for each comparison using a Venn diagram.
+## ------------------------------------------------------------------------
+## ----decideTests.1-------------------------------------------------------
+require(limma)
+res<-decideTests(fit.main, method="separate", adjust.method="fdr", p.value=0.05, lfc=1)
+
+## ----resumeDecideTests---------------------------------------------------
+sum.res.rows<-apply(abs(res),1,sum)
+res.selected<-res[sum.res.rows!=0,] 
+print(summary(res))
+
+## ---- vennDiagram, fig.cap="Venn diagram showing the genes in common between the three comparisons performed"----
+vennDiagram (res.selected[,1:3], cex=0.9)
+title("Genes in common between the three comparisons\n Genes selected with FDR < 0.05 and logFC > 1")
+
+
+#' 
+#' # Heatmaps
+## ------------------------------------------------------------------------
+## ----data4Heatmap--------------------------------------------------------
+probesInHeatmap <- rownames(res.selected)
+HMdata <- exprs(eset_filtered)[rownames(exprs(eset_filtered)) %in% probesInHeatmap,]
+
+geneSymbols <- select(mogene10sttranscriptcluster.db, rownames(HMdata), c("SYMBOL"))
+SYMBOLS<- geneSymbols$SYMBOL
+rownames(HMdata) <- SYMBOLS
+write.csv(HMdata, file = file.path("./results/data4Heatmap.csv"))
+
+## ----heatmapNoclustering, fig.cap="Heatmap for expression data without any grouping"----
+my_palette <- colorRampPalette(c("blue", "red"))(n = 299)
+require(gplots)
+
+heatmap.2(HMdata,
+          Rowv = FALSE,
+          Colv = FALSE,
+          main = "Differentially expressed genes \n FDR < 0,05, logFC >=1",
+          scale = "row",
+          col = my_palette,
+          sepcolor = "white",
+          sepwidth = c(0.05,0.05),
+          cexRow = 0.5,
+          cexCol = 0.9,
+          key = TRUE,
+          keysize = 1.5,
+          density.info = "histogram",
+          ColSideColors = c(rep("red",6),rep("blue",6), rep("green",6), rep("yellow",6)),
+          tracecol = NULL,
+          dendrogram = "none",
+          srtCol = 30)
+
+## ----heatmapClustering, fig.cap="Heatmap for expression data grouping genes (rows) and samples (columns) by their similarity"----
+heatmap.2(HMdata,
+          Rowv = TRUE,
+          Colv = TRUE,
+          dendrogram = "both",
+          main = "Differentially expressed genes \n FDR < 0,05, logFC >=1",
+          scale = "row",
+          col = my_palette,
+          sepcolor = "white",
+          sepwidth = c(0.05,0.05),
+          cexRow = 0.5,
+          cexCol = 0.9,
+          key = TRUE,
+          keysize = 1.5,
+          density.info = "histogram",
+          ColSideColors = c(rep("red",6),rep("blue",6), rep("green",6), rep("yellow",6)),
+          tracecol = NULL,
+          srtCol = 30)
+
+
+#' 
+#' # Functional interpretation
+#' Finally we select only the significant genes using as threshold 0.05 for the adjusted p-value. Once we have these genes selected, we will look for enrichment using the function _enrichPathway_ in the _ReactomePA_ package. After this step we have a list of the enriched pathways with the amount of genes differentially expressed belonging to that pathway, the p-value of each pathway and many other informations.  
+#' To summarize these pathways we can use a network showing as nodes the genes, and also the association to a particular pathway, we have done this for 4 different enriched pathways usign the function _cnetplot_.
+## ------------------------------------------------------------------------
+## ----selectGenes---------------------------------------------------------
+listOfTables <- list(quadctrlvsquadKO = topTab_quadctrlvsquadKO, 
+                     solctrlvssolKO  = topTab_solctrlvssolKO, 
+                     quadctrlvssolCtrl = topTab_quadctrlvssolCtrl)
+
+listOfSelected <- list()
+for (i in 1:length(listOfTables)){
+  # select the toptable
+  topTab <- listOfTables[[i]]
+  # select the genes to be included in the analysis
+  whichGenes<-topTab["adj.P.Val"] < 0.05
+  selectedIDs <- rownames(topTab)[whichGenes]
+  # convert the ID to Entrez
+  EntrezIDs<- select(mogene10sttranscriptcluster.db, selectedIDs, c("ENTREZID"))
+  EntrezIDs <- EntrezIDs$ENTREZID
+  listOfSelected[[i]] <- EntrezIDs
+  names(listOfSelected)[i] <- names(listOfTables)[i]
+}
+sapply(listOfSelected, length)
+
+## ----BiologicalSig-------------------------------------------------------
+require(ReactomePA)
+
+listOfData <- listOfSelected[1:3]
+comparisonsNames <- names(listOfData)
+
+organism <- "mouse"
+
+for (i in 1:length(listOfData)){
+  data <- listOfData[[i]]
+  genesIn <- listOfSelected[[i]]
+  comparison <- comparisonsNames[i]
+  enrich.result <- enrichPathway(gene = genesIn,
+                                 pvalueCutoff = 0.05,
+                                 readable = T,
+                                 organism =  organism,
+                                 minGSSize = 5,
+                                 maxGSSize = 500,
+                                 pAdjustMethod = "BH")
+
+    
+  if (length(rownames(enrich.result@result)) != 0) {
+    print(paste("For", comparison, "comparison, the enriched pathways are:"))
+    print(enrich.result@result$Description[1:10])
+    print("")
+    
+    print(cnetplot(enrich.result, categorySize = "geneNum", schowCategory = 15, 
+         vertex.label.cex = 0.75))
+    }
+}
+
+#' 
+
+```
+
+# GitHub repository
+All the code and files related to this report can be found in <https://github.com/FerriolCalvet/Calvet_Ferriol-OmicsTechniques>.
+
+# Abstract
+
+These analysis focuses on the study of differential gene expression in skeletal muscle tissues with normal or knocked out Nebulin using microarray data. After the processing and correction of the data, the pathways having more differential gene expression are related to Citric acid cycle, pyruvate metabolism and respiratory electron transport.  
+
+# Objectives
+The goal of this analysis is to find differential gene expression when nebulin gene is mutated in a way that it cannot be formed properly. The existance of differential gene expression has been proved in patients suffering nemaline myopathy (NEM), but the role of nebulin is still poorly understood. So the goal of this study is also to determine which genes and pathways change their expression when Nebulin cannot be produced. This analysis will be made on soleus and on quadriceps skeletal muscle.
+
+
+# Materials and methods
+## Experiment
+To obtain information about the mRNA expression, that was used as experimental data, they used microarrays experiment, in particular, the array selected for this experiment is _Affymetrix Mouse Gene 1.0 ST Array_.  
+As it is indicated in the name of the array, this experiment was performed in mice ( _Mus musculus_ ).
+This arrays contains 1102500 probes, and has been used to measure all the 24 samples in this experiment.
+
+### Experimental Design
+This study focused on two different skeletal muscles of mice, the quadriceps and the soleus.  
+For each of these muscles there were two groups, KO group and control group, making a total of 4 groups. Then for each of these 4 groups, 6 biological replicates were selected, taking into consideration their age and sex; they are all age-matched males.  
+When extracting the samples, in the case of Nebulin cKO quadriceps it was smaller than in control mices, and for the soleus there was no significant difference.
+
+
+## Analysis
+### General procedure of the analysis
+To perform the analysis of the experimental data we are going to use R, so first of all we need to import all the raw data into R. After this we will evaluate it, normalize it in case it is necessary and evaluate the general features again. Then we will filter the genes we are not interested in because they are not variable enough for then being differentially expressed.  
+
+Once we have finished this, the data that we are going to use for the analysis is ready, so we need to build the design and contrast matrices to follow with the analysis. The next step is the estimation of the parameters for the linear model that describes the variation in the expression as a function of the design matrix (representing the different groups). Then we build the comparisons detailed in the contrast matrix, and we define a table of genes that are differentially expressed for each comparison.  
+
+Each table of differentially expressed genes will be annotated, and we use volcano plots to show which are the genes that are more significantly different for each comparison. Then we intersect the genes that are differentially expressed for each comparison. Then, to see some expression patterns we use the heatmaps in which we can see how differenialy expressed is each gene in each of the samples.  
+
+Finall to see the functional implications of this we select only the genes that are significant and we perform an enrichment analysis to see which pathways are the predominant ones in each differentiation.
+
+
+### Specific Procedures
+The whole analysis described below can be found in R code in this same folder on GitHub.
+#### Data capture from images or text files
+We need two different informations as input, on the one hand the targets file, and on the other hand the expression data. We will read the targets file as a normal tsv file, and for the data we will use _read.celfiles_ function. We will also store the targets dataframe in _AnnotatedDataFrame_ format.   Finally, we make sure that the names of the rows and the columns are the appropiate ones.
+
+#### Quality assessment of raw data
+To perform the raw data evaluation we will use two different plots. First we will plot the Principal Component Analysis of our data, that allows us to see how the different samples are clustering or how are they distributed in relation to one another, and then we will use the boxplot to see how are the expression values of each sample distributed.
+
+#### Normalization
+As we see that there are some irregularities in the boxplot and that in the PCA some groups are not very compact, we will normalize the data using the _rma_ function of the package _oligo_. From now on we will work with this normalized data.
+
+#### Quality assessment of normalized data
+After normalizing the data we perform the same quality check as before, however in this case we will use the function _arrayQualityMetrics_ that outputs the results of this quality check automatically in a folder that can be found in the results directory.
+
+#### Filtering data
+Now once we have made sure that the data is properly normalized, we look at the variance for each of the genes in the array. This way we will see the proportion of genes that are highly variable, if any. In the plot we could see that for almost 95 % of the genes, the standard deviation is below 0.5. This means that for these genes there is not enough variance to detect differential expression, and they should be removed from the analysis.
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+sds <- apply (exprs(eset_rma), 1, sd)
+sdsO<- sort(sds)
+plot(1:length(sdsO), sdsO, main="Distribution of variability for all genes",
+     sub="Vertical lines represent 90% and 95% percentiles",
+     xlab="Gene index (from least to most variable)", ylab="Standard deviation")
+abline(v=length(sds)*c(0.9,0.95), col="red")
+```
+
+After concluding that some genes need to be discarded from the pool of candidate differentially expressed genes, we filter those genes whose variance is not in the top 25% when using the Interquartile Range as function.  
+After the filtering is applied we obtain an expression set without all these genes that have been filtered out, and this is the data that will be used to continue the analysis.
+
+#### Build design and contrast matrices
+After having the data prepared, we now build the design and contrast matrices. The first one helps us to discriminate the 4 different groups in the experiment, and the second one allows us to define the comparisons that are rellevant for the analysis.  
+In our case the rellevant comparisons are KO vs control in quadriceps and in soleus, and also soleus control vs quadriceps control.
+
+#### Identification of differentially expressed genes
+With the design and the contrast matrices defined we can go on with the analysis, and fit the linear model. By fitting this linear model, we estimate the parameters that define the relationship between the values of expression and the different groups defined in the design matrix.  
+Once we have completed this step, we build the comparisons and we store in three different tables the results fro the three different comparison we defined in the contrast matrix.
+
+#### Annotation
+This three tables we have just defined with the results of the linear model, can be annotated using the proper reference for our array, remember that, in this case, the annotation package that allows us to annotate our data is _"mogene10sttranscriptcluster.db"_.
+
+#### Multiple comparisons
+##### Volcano plot of all the significant genes displaying the names for top 10 genes
+After annotating the genes that are cantidates to be differentially expressed in each of the comparisons, we can use volcano plots to show how significant and how differentially expressed they are.
+
+##### Differentially expressed genes comparison
+We can also check the intersections of the different set of differentially expressed genes for each comparison using a Venn diagram.
+
+#### Functional interpretation
+Finally we select only the significant genes using as threshold 0.05 for the adjusted p-value. Once we have these genes selected, we will look for enrichment using the function _enrichPathway_ in the _ReactomePA_ package. After this step we have a list of the enriched pathways with the amount of genes differentially expressed belonging to that pathway, the p-value of each pathway and many other informations.  
+To summarize these pathways we can use a network showing as nodes the genes, and also the association to a particular pathway, we have done this for 4 different enriched pathways usign the function _cnetplot_.
+
+
+# Results
+The comparison performed in these analysis in order to check the differential gene expression are the following: Quadriceps Knockout vs Quadriceps control, Soleus Knockout vs Soleus control and Quadriceps control vs Soleus control. The two first ones are to check the differential expression between Nebulin knockout and control cells in both muscles, soleus and quadriceps.
+The last comparison is just to check that the differentially expressed genes in the two previous comparisons are because of the knockout of Nebulin and not just an arifact of the muscles, so in here we compare the expression of normal control tissues of quadriceps and soleus, and we expect to be differentially expressed the genes that make one muscle be different from the other one.
+
+A general overview of the results, points out that the genes that are significantly differentially expressed in skeletal muscle of mice quadriceps and soleus are involved mainly in three pathways that are Citric acid cycle, pyruvate metabolism and respiratory electron transport.  
+This analysis concludes that the enrichment of these pathways is significant, but in addition to this, we have another comparison that shows that this is not a bias of the data. The outter comparison we performed between the two different muscles in control state, shows that those pathways differentially expressed in the knockout vs control muscles are not present among the top differentially expressed pathways in the control control comparison.
+
+### Quadriceps Knockout vs Quadriceps control
+```{r echo=FALSE}
+require(ReactomePA)
+
+listOfData <- listOfSelected[1:3]
+comparisonsNames <- names(listOfData)
+
+organism <- "mouse"
+
+i=1
+data <- listOfData[[i]]
+genesIn <- listOfSelected[[i]]
+comparison <- comparisonsNames[i]
+enrich.result <- enrichPathway(gene = genesIn,
+                               pvalueCutoff = 0.05,
+                               readable = T,
+                               organism =  organism,
+                               minGSSize = 5,
+                               maxGSSize = 500,
+                               pAdjustMethod = "BH")
+
+  
+if (length(rownames(enrich.result@result)) != 0) {
+  print(paste("For", comparison, "comparison, the enriched pathways are:"))
+  print(enrich.result@result$Description[1:10])
+  print("")
+  
+  print(cnetplot(enrich.result, categorySize = "geneNum", schowCategory = 15, 
+       vertex.label.cex = 0.75))
+  }
+```
+
+
+### Soleus Knockout vs Soleus control
+```{r echo=FALSE}
+require(ReactomePA)
+
+listOfData <- listOfSelected[1:3]
+comparisonsNames <- names(listOfData)
+
+organism <- "mouse"
+
+i=2
+data <- listOfData[[i]]
+genesIn <- listOfSelected[[i]]
+comparison <- comparisonsNames[i]
+enrich.result <- enrichPathway(gene = genesIn,
+                               pvalueCutoff = 0.05,
+                               readable = T,
+                               organism =  organism,
+                               minGSSize = 5,
+                               maxGSSize = 500,
+                               pAdjustMethod = "BH")
+
+  
+if (length(rownames(enrich.result@result)) != 0) {
+  print(paste("For", comparison, "comparison, the enriched pathways are:"))
+  print(enrich.result@result$Description[1:10])
+  print("")
+  
+  print(cnetplot(enrich.result, categorySize = "geneNum", schowCategory = 15, 
+       vertex.label.cex = 0.75))
+  }
+```
+
+
+
+### Quadriceps control vs Soleus control
+
+```{r echo=FALSE}
+require(ReactomePA)
+
+listOfData <- listOfSelected[1:3]
+comparisonsNames <- names(listOfData)
+
+organism <- "mouse"
+
+i=3
+data <- listOfData[[i]]
+genesIn <- listOfSelected[[i]]
+comparison <- comparisonsNames[i]
+enrich.result <- enrichPathway(gene = genesIn,
+                               pvalueCutoff = 0.05,
+                               readable = T,
+                               organism =  organism,
+                               minGSSize = 5,
+                               maxGSSize = 500,
+                               pAdjustMethod = "BH")
+
+  
+if (length(rownames(enrich.result@result)) != 0) {
+  print(paste("For", comparison, "comparison, the enriched pathways are:"))
+  print(enrich.result@result$Description[1:10])
+  print("")
+  
+  print(cnetplot(enrich.result, categorySize = "geneNum", schowCategory = 15, 
+       vertex.label.cex = 0.75))
+  }
+```
+
+
+
+# Discussion
+A possible limitation of this study is that the effect of Nebulin has only been tested in skeletal muscle cells. Although it is the tissue where it makes its main function, it might also be interesting to see if the genes that are differentially expressed in the skeletal muscle are the same ones that are differenially expressed in other tissues were actin filaments are also present in contact with Nebulin.
+
+
+# Conclusions
+After working on microarrays analysis, I have seen that there are a lot of thing we can do, in function of the data we have, but that there are some steps that need to be completed consistently to avoid future problems.  
+I have realized why normalizing the data is necessary, which plots allow us to see the quality of our data, but I have also learned which functions and tools allow us to fit linear models to find differential expression among all the genes in an array.
+
+In conclusion, I have learned a lot of new techniques that for sure will be helpful in my future, not only for microarray analysis, but also for designing or analysing other kind of experiments.
